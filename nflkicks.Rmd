@@ -1,0 +1,9 @@
+```{r}
+library(nflfastR)
+pbp <- nflfastR::load_pbp(2000:2020)
+```
+
+```{r}
+pbp <- pbp[!is.na(pbp$play_type),]
+fg <- pbp[pbp$play_type == 'field_goal',]
+```
