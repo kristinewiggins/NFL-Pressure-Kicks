@@ -1,9 +1,38 @@
 ```{r}
-library(nflfastR)
-pbp <- nflfastR::load_pbp(2000:2020)
+#code used to retrieve the dataset and create .csv
+
+#library(nflfastR)
+#pbp <- nflfastR::load_pbp(2000:2022)
+#pbp <- pbp[!is.na(pbp$play_type),]
+#fg <- pbp[pbp$play_type == 'field_goal',]
+#write.csv(fg, 'NFLfieldgoals.csv')
 ```
 
 ```{r}
-pbp <- pbp[!is.na(pbp$play_type),]
-fg <- pbp[pbp$play_type == 'field_goal',]
+library(dplyr)
+fg <- read.csv('NFLfieldgoals.csv')
+fg <- fg %>% select(play_id,game_id,home_team,away_team,
+                season_type,week,posteam,posteam_type,
+                quarter_seconds_remaining,
+                half_seconds_remaining,
+                game_seconds_remaining,drive,sp,qtr,
+                time,play_type,field_goal_result,
+                kick_distance,home_timeouts_remaining,
+                away_timeouts_remaining,timeout,
+                timeout_team,posteam_timeouts_remaining,
+                defteam_timeouts_remaining,posteam_score,
+                defteam_score,score_differential,
+                posteam_score_post,defteam_score_post,
+                score_differential_post,no_score_prob,
+                opp_fg_prob,wp,def_wp,home_wp,away_wp,
+                penalty,kicker_player_name,kicker_player_id,
+                blocked_player_id,blocked_player_name,
+                penalty_team,season,play_clock,
+                drive_inside20,location,result,roof,
+                surface,temp,wind)
+write.csv(fg, 'NFLkicks.csv')
+```
+
+```{r}
+pressure <- fg[fg$game_seconds_remaining <= 60,]
 ```
