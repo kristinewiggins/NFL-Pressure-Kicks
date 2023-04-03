@@ -1,0 +1,130 @@
+---
+title: "NFL Plots (5 Min)"
+author: "Sophie Giacobbe"
+date: "4/3/2023"
+output: pdf_document
+---
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+kicks <- read_csv("NFLkicks.csv")
+kicks <- kicks[kicks$game_seconds_remaining <= 300,]
+```
+
+```{r}
+ggplot(kicks)+
+  geom_point(aes(kick_distance, game_seconds_remaining, color = field_goal_result))+
+  facet_wrap("field_goal_result")+
+  theme(legend.position = "none")+
+  labs(x = "Kick Distance", y = "Seconds Remaining")
+```
+
+```{r}
+nfcnw <- c("CHI", "DET", "GB", "MIN", "ARI", "LA", "SF", "SEA")
+nfcse <- c("ATL", "CAR", "NO", "TB", "DAL", "NYG", "PHI", "WAS")
+afcnw <- c("BAL", "CIN", "CLE", "PIT", "DEN", "KC", "LV", "LAC")
+afcse <- c("HOU", "IND", "JAX", "TEN", "BUF", "MIA", "NE", "NYJ")
+
+kicksnnw <- kicks |>
+  filter(posteam %in% nfcnw)
+kicksanw <- kicks |>
+  filter(posteam %in% afcnw)
+kicksnse <- kicks |>
+  filter(posteam %in% nfcse)
+kicksase <- kicks |>
+  filter(posteam %in% afcse)
+```
+
+```{r}
+ggplot(kicksnnw)+
+  geom_bar(aes(field_goal_result, fill = field_goal_result))+
+  facet_wrap("posteam")+
+  theme(axis.text.x = element_blank())+
+  theme(axis.ticks.x = element_blank())+
+  labs(x = "", y = "", title = "NFC North & West")+
+  guides(fill=guide_legend(title=""))
+
+ggplot(kicksnse)+
+  geom_bar(aes(field_goal_result, fill = field_goal_result))+
+  facet_wrap("posteam")+
+  theme(axis.text.x = element_blank())+
+  theme(axis.ticks.x = element_blank())+
+  labs(x = "", y = "", title = "NFC South & East")+
+  guides(fill=guide_legend(title=""))
+
+ggplot(kicksanw)+
+  geom_bar(aes(field_goal_result, fill = field_goal_result))+
+  facet_wrap("posteam")+
+  theme(axis.text.x = element_blank())+
+  theme(axis.ticks.x = element_blank())+
+  labs(x = "", y = "", title = "AFC North & West")+
+  guides(fill=guide_legend(title=""))
+
+ggplot(kicksase)+
+  geom_bar(aes(field_goal_result, fill = field_goal_result))+
+  facet_wrap("posteam")+
+  theme(axis.text.x = element_blank())+
+  theme(axis.ticks.x = element_blank())+
+  labs(x = "", y = "", title = "AFC South & East")+
+  guides(fill=guide_legend(title=""))
+```
+
+```{r}
+missedanw <- kicksanw[kicksanw$field_goal_result == "missed",]
+ggplot(missedanw)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "AFC North & West")+
+  guides(fill=guide_legend(title="Surface"))
+
+missedase <- kicksase[kicksase$field_goal_result == "missed",]
+ggplot(missedase)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "AFC South & East")+
+  guides(fill=guide_legend(title="Surface"))
+
+missednnw <- kicksnnw[kicksnnw$field_goal_result == "missed",]
+ggplot(missednnw)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "NFC North & West")+
+  guides(fill=guide_legend(title="Surface"))
+
+missednse <- kicksnse[kicksnse$field_goal_result == "missed",]
+ggplot(missednse)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "NFC South & East")+
+  guides(fill=guide_legend(title="Surface"))
+```
+
+```{r}
+madeanw <- kicksanw[kicksanw$field_goal_result == "made",]
+ggplot(madeanw)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "AFC North & West")+
+  guides(fill=guide_legend(title="Surface"))+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+
+madease <- kicksase[kicksase$field_goal_result == "made",]
+ggplot(madease)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "AFC South & East")+
+  guides(fill=guide_legend(title="Surface"))+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+
+madennw <- kicksnnw[kicksnnw$field_goal_result == "made",]
+ggplot(madennw)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "NFC North & West")+
+  guides(fill=guide_legend(title="Surface"))+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+
+madense <- kicksnse[kicksnse$field_goal_result == "made",]
+ggplot(madense)+
+  geom_bar(aes(posteam, fill = surface))+
+  labs(y = "", x = "", title = "NFC South & East")+
+  guides(fill=guide_legend(title="Surface"))+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+```
