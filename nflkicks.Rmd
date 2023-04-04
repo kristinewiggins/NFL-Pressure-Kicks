@@ -1,38 +1,54 @@
 ```{r}
-#code used to retrieve the dataset and create .csv
-
+## code used to retrieve the dataset and create .csv
+#
 #library(nflfastR)
 #pbp <- nflfastR::load_pbp(2000:2022)
 #pbp <- pbp[!is.na(pbp$play_type),]
-#fg <- pbp[pbp$play_type == 'field_goal',]
+#fgto <- pbp[pbp$play_type == 'field_goal' | pbp$play_type == #'no_play',]
+## remove NAs and penalties
+#fgto <- fgto[!is.na(fgto$timeout),]
+#fgto <- fgto[fgto$penalty != 1,]
+## add timeouts to field goal rows
+#for (i in 1:nrow(fgto)){
+#  if (fgto$timeout[i]==1 & fgto$play_type[i] != 'field_goal'){
+#    if (fgto$play_type[i+1]=='field_goal' & #fgto$time[i]==fgto$time[i+1]){
+#      fgto$timeout[i+1] = 1
+#      fgto$timeout_team[i+1] = fgto$timeout_team[i]
+#    }
+#  }
+#}
+## keep only the field goal rows
+#fg <- fgto[fgto$play_type == 'field_goal',]
 #write.csv(fg, 'NFLfieldgoals.csv')
 ```
 
 ```{r}
-library(dplyr)
-fg <- read.csv('NFLfieldgoals.csv')
-fg <- fg %>% select(play_id,game_id,home_team,away_team,
-                season_type,week,posteam,posteam_type,
-                quarter_seconds_remaining,
-                half_seconds_remaining,
-                game_seconds_remaining,drive,sp,qtr,
-                time,play_type,field_goal_result,
-                kick_distance,home_timeouts_remaining,
-                away_timeouts_remaining,timeout,
-                timeout_team,posteam_timeouts_remaining,
-                defteam_timeouts_remaining,posteam_score,
-                defteam_score,score_differential,
-                posteam_score_post,defteam_score_post,
-                score_differential_post,no_score_prob,
-                opp_fg_prob,wp,def_wp,home_wp,away_wp,
-                penalty,kicker_player_name,kicker_player_id,
-                blocked_player_id,blocked_player_name,
-                penalty_team,season,play_clock,
-                drive_inside20,location,result,roof,
-                surface,temp,wind)
-write.csv(fg, 'NFLkicks.csv')
+## select the useful columns to create final dataset .csv
+#library(dplyr)
+#fg <- read.csv('NFLfieldgoals.csv')
+#fg <- fg %>% select(play_id,game_id,home_team,away_team,
+#                season_type,week,posteam,posteam_type,
+#                quarter_seconds_remaining,
+#                half_seconds_remaining,
+#                game_seconds_remaining,drive,sp,qtr,
+#                time,play_type,field_goal_result,
+#                kick_distance,home_timeouts_remaining,
+#                away_timeouts_remaining,timeout,
+#                timeout_team,posteam_timeouts_remaining,
+#                defteam_timeouts_remaining,posteam_score,
+#                defteam_score,score_differential,
+#                posteam_score_post,defteam_score_post,
+#                score_differential_post,no_score_prob,
+#                opp_fg_prob,wp,def_wp,home_wp,away_wp,
+#                kicker_player_name,kicker_player_id,
+#                season,play_clock,location,
+#                result,roof,surface,temp,wind)
+#write.csv(fg, 'NFLkicks.csv')
 ```
 
 ```{r}
-pressure <- fg[fg$game_seconds_remaining <= 60,]
+fg <- read.csv('NFLkicks.csv')
+presskicks1 <- fg[fg$game_seconds_remaining <= 60,]
+presskicks3 <- fg[fg$game_seconds_remaining <= 180,]
+presskicks5 <- fg[fg$game_seconds_remaining <= 300,]
 ```
