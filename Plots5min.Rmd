@@ -8,10 +8,11 @@ output: pdf_document
 ```{r}
 library(ggplot2)
 library(tidyverse)
+library(readr)
 ```
 
 ```{r}
-kicks <- read_csv("NFLkicks.csv")
+kicks <- read_csv("NFLkicks2.csv")
 kicks <- kicks[kicks$game_seconds_remaining <= 300,]
 ```
 
@@ -78,25 +79,29 @@ missedanw <- kicksanw[kicksanw$field_goal_result == "missed",]
 ggplot(missedanw)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "AFC North & West")+
-  guides(fill=guide_legend(title="Surface"))
+  guides(fill=guide_legend(title="Surface"))+
+  ylim(0, 16)
 
 missedase <- kicksase[kicksase$field_goal_result == "missed",]
 ggplot(missedase)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "AFC South & East")+
-  guides(fill=guide_legend(title="Surface"))
+  guides(fill=guide_legend(title="Surface"))+
+  ylim(0, 16)
 
 missednnw <- kicksnnw[kicksnnw$field_goal_result == "missed",]
 ggplot(missednnw)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "NFC North & West")+
-  guides(fill=guide_legend(title="Surface"))
+  guides(fill=guide_legend(title="Surface"))+
+  ylim(0, 16)
 
 missednse <- kicksnse[kicksnse$field_goal_result == "missed",]
 ggplot(missednse)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "NFC South & East")+
-  guides(fill=guide_legend(title="Surface"))
+  guides(fill=guide_legend(title="Surface"))+
+  ylim(0, 16)
 ```
 
 ```{r}
@@ -105,26 +110,26 @@ ggplot(madeanw)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "AFC North & West")+
   guides(fill=guide_legend(title="Surface"))+
-  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+  ylim(0, 65)
 
 madease <- kicksase[kicksase$field_goal_result == "made",]
 ggplot(madease)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "AFC South & East")+
   guides(fill=guide_legend(title="Surface"))+
-  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+  ylim(0, 65)
 
 madennw <- kicksnnw[kicksnnw$field_goal_result == "made",]
 ggplot(madennw)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "NFC North & West")+
   guides(fill=guide_legend(title="Surface"))+
-  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+  ylim(0, 65)
 
 madense <- kicksnse[kicksnse$field_goal_result == "made",]
 ggplot(madense)+
   geom_bar(aes(posteam, fill = surface))+
   labs(y = "", x = "", title = "NFC South & East")+
   guides(fill=guide_legend(title="Surface"))+
-  scale_y_continuous(breaks = scales::pretty_breaks(n = 20))
+  ylim(0, 65)
 ```
