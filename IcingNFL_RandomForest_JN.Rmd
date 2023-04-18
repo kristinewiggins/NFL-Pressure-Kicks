@@ -182,11 +182,32 @@ Boruta is a feature selection algorithm. Precisely, it works as a wrapper
 algorithm around Random Forest. This package derive its name from a demon in 
 Slavic mythology who dwelled in pine forests. 
 
+```{r}
+# running RF on test 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import) 
+vip(rforest_import)
+
+# running RF w/o sp 
+presskicks1_test <- presskicks1_test[, -14]
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import) 
+vip(rforest_import)
+
+```
+27 + 130 / 0 + 1 + 27 + 130 = 0.993670886076
+99.37% accurcy 
+5 + 130 / 5 + 130 + 23 + 0 = 0.854430379747
+85.44% accurcy 
 
 ```{r}
 #presskicks3 <- timeout_occures[timeout_occures$game_seconds_remaining <= 180,]
 #presskicks5 <- timeout_occures[timeout_occures$game_seconds_remaining <= 300,]
-
-
 
 ```
