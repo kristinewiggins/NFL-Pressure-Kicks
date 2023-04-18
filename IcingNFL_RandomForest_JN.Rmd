@@ -1,0 +1,192 @@
+---
+title: "Capstone - Cleaning & Random Forest"
+output: pdf_document
+date: "2023-03-26"
+---
+
+```{r, message=FALSE, warning=FALSE}
+# setup
+set.seed(478)
+library(dplyr)
+library(ggplot2)
+library(tidymodels)
+library(tidyverse)
+library(randomForest)
+library(rpart)
+library(vip)
+library(Boruta)
+```
+
+
+```{r}
+# read in data 
+data_nfl <- read.csv('https://raw.githubusercontent.com/kristinewiggins/NFL-Pressure-Kicks/c01bd037915638fc425517a2a362aa9b745c903b/NFLkicks.csv')
+```
+
+```{r}
+glimpse(data_nfl)
+```
+
+```{r}
+# filter out observations without timeout called
+timeout_occures <- data_nfl[data_nfl$timeout > 0,]
+
+# clean up NAs in temp, wind, play_clock,  of default appropriate values
+timeout_occures <- timeout_occures %>% mutate(temp = replace_na(temp, 65))
+timeout_occures <- timeout_occures %>% mutate(wind = replace_na(wind, 0))
+timeout_occures <- timeout_occures %>% mutate(play_clock = replace_na(play_clock, 0))
+timeout_occures <- timeout_occures %>% mutate(drive = replace_na(drive, 0))
+
+# Fixing NAs in roof variable by looking up each team's stadium
+which(is.na(timeout_occures), arr.ind=TRUE)
+timeout_occures[2488, 44] <- "open" #add retractable? 
+timeout_occures[2492, 44] <- "dome"
+timeout_occures[2498, 44] <- "open" #add retractable? 
+timeout_occures[2508, 44] <- "open" #add retractable? 
+timeout_occures[2533, 44] <- "open"
+timeout_occures[2534, 44] <- "open" 
+timeout_occures[2535, 44] <- "open" 
+timeout_occures[2549, 44] <- "open" #add retractable? 
+timeout_occures[2554, 44] <- "open"
+timeout_occures[2555, 44] <- "open"
+timeout_occures[2564, 44] <- "open"
+timeout_occures[2575, 44] <- "dome" #add retractable? 
+timeout_occures[2583, 44] <- "dome" #add retractable? 
+timeout_occures[2595, 44] <- "dome" #add retractable? 
+timeout_occures[2596, 44] <- "dome" #add retractable? 
+timeout_occures[2619, 44] <- "dome" #add retractable?
+timeout_occures[2620, 44] <- "dome" #add retractable?
+timeout_occures[2628, 44] <- "dome" #add retractable?
+
+sum(is.na(timeout_occures))
+```
+
+```{r}
+# observations occurring under 60 seconds 
+presskicks1 <- timeout_occures[timeout_occures$game_seconds_remaining <= 60,]
+```
+
+```{r}
+# splitting data 
+sample_size = floor(0.7*nrow(presskicks1))
+picked = sample(seq_len(nrow(presskicks1)), size = sample_size)
+presskicks1_train <- presskicks1[picked,]
+presskicks1_test <- presskicks1[-picked,]
+
+# convert categorical binary to numerical binary 
+presskicks1_train$field_goal_result <- ifelse(presskicks1_train$field_goal_result == "made",1,0)
+presskicks1_test$field_goal_result <- ifelse(presskicks1_test$field_goal_result == "made",1,0)
+``` 
+
+
+```{r}
+# random forest 
+rforest <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_train, 
+                   ntree = 200)
+rforest
+```
+
+TP + TN / TP + TN + FP + FN 
+84 + 279 / 84 + 279 + 0 + 3 = 0.991803278689
+99% ??!??! 
+
+```{r}
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import) 
+vip(rforest_import)
+```
+Same accuracy and OOB estimate. 
+
+------------------
+Variables in order of importance with description. Importance is a measure of 
+by how much removing a variable decreases accuracy, and vice versa — by how much 
+including a variable increases accuracy.
+------------------
+sp:	Binary indicator for whether or not a score occurred on the play.
+
+score_differential_post: Score differential between the posteam and defteam at the end of the play.
+
+def_wp:	Estimated win probability for the defteam.
+
+wp:	Estimated win probability for the posteam given the current situation at the start of the given play.
+
+score_differential: Score differential between the posteam and defteam at the start of the play.
+
+no_score_prob: Predicted probability of no score occurring for the rest of the half based on the expected points model.
+
+kick_distance:	Numeric distance in yards for kickoffs, field goals, and punts.
+
+home_wp:	Estimated win probability for the home team.
+
+temp: The temperature at the stadium only for 'roof' = 'outdoors' or 'open'. 
+
+away_wp:	Estimated win probability for the away team.
+-----------------
+
+```{r}
+# Removing sp variable as it is redundant
+presskicks1_train <- presskicks1_train[, -14]
+
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import) 
+vip(rforest_import)
+```
+
+TP + TN / TP + TN + FP + FN 
+69 + 276 / 69 + 276 + 18 + 3 = 0.94262295082 
+94.26 % accuracy for prediction. 
+
+------------------
+Variables in order of importance with description. Importance is a measure of 
+by how much removing a variable decreases accuracy, and vice versa — by how much 
+including a variable increases accuracy.
+------------------
+score_differential_post: Score differential between the posteam and defteam at the end of the play.
+
+def_wp:	Estimated win probability for the defteam.
+
+wp:	Estimated win probability for the posteam given the current situation at the start of the given play.
+
+score_differential: Score differential between the posteam and defteam at the start of the play.
+
+no_score_prob: Predicted probability of no score occurring for the rest of the half based on the expected points model.
+
+kick_distance:	Numeric distance in yards for kickoffs, field goals, and punts.
+
+result: Estimated win probability for the home team.
+
+quarter_seconds_remaining: The temperature at the stadium only for 'roof' = 'outdoors' or 'open'. 
+
+away_wp: Estimated win probability for the away team.
+
+home_wp: Estimated win probability for the home team.
+-----------------
+
+```{r, message=FALSE, warning=FALSE}
+boruta <- Boruta(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_train, doTrace = 2, maxRuns = 500)
+
+print(boruta$finalDecision)
+par(mar = c(8,5,2,2))
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+Boruta is a feature selection algorithm. Precisely, it works as a wrapper 
+algorithm around Random Forest. This package derive its name from a demon in 
+Slavic mythology who dwelled in pine forests. 
+
+
+```{r}
+#presskicks3 <- timeout_occures[timeout_occures$game_seconds_remaining <= 180,]
+#presskicks5 <- timeout_occures[timeout_occures$game_seconds_remaining <= 300,]
+
+
+
+```
