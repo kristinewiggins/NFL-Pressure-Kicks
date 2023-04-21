@@ -1,0 +1,342 @@
+---
+title: "Capstone - Cleaning & Random Forest"
+author: "Jason Nero" 
+output: pdf_document
+date: "2023-03-26"
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Setup
+set.seed(478)
+library(dplyr)
+library(ggplot2)
+library(tidymodels)
+library(tidyverse)
+library(randomForest)
+library(rpart)
+library(vip)
+library(Boruta)
+```
+
+
+```{r}
+# Read in data 
+data_nfl <- read.csv('https://raw.githubusercontent.com/kristinewiggins/NFL-Pressure-Kicks/c01bd037915638fc425517a2a362aa9b745c903b/NFLkicks.csv')
+```
+
+```{r}
+# Cursory look at variables 
+glimpse(data_nfl)
+```
+
+```{r}
+# Filter observations where timeout occurred, possible icing attempts
+timeout_occures <- data_nfl[data_nfl$timeout > 0,]
+```
+
+```{r}
+# Replace NAs in temp, wind, play_clock, and drive with default appropriate values
+timeout_occures <- timeout_occures %>% mutate(temp = replace_na(temp, 65))
+timeout_occures <- timeout_occures %>% mutate(wind = replace_na(wind, 0))
+timeout_occures <- timeout_occures %>% mutate(play_clock = replace_na(play_clock, 0))
+timeout_occures <- timeout_occures %>% mutate(drive = replace_na(drive, 0))
+
+# Replace NAs in roof with retractable given possible outdoor or indoor conditions
+# could replace with dome
+timeout_occures <- timeout_occures %>% mutate(roof = replace_na(roof, "retractable"))
+
+sum(is.na(timeout_occures))
+```
+
+```{r}
+# Observations occurring at or under 60 seconds 
+presskicks1 <- timeout_occures[timeout_occures$game_seconds_remaining <= 60,]
+
+# Splitting data 
+sample_size = floor(0.7*nrow(presskicks1))
+picked = sample(seq_len(nrow(presskicks1)), size = sample_size)
+presskicks1_train <- presskicks1[picked,]
+presskicks1_test <- presskicks1[-picked,]
+
+# Convert categorical binary to numerical binary 
+presskicks1_train$field_goal_result <- ifelse(presskicks1_train$field_goal_result == "made",1,0)
+presskicks1_test$field_goal_result <- ifelse(presskicks1_test$field_goal_result == "made",1,0)
+``` 
+
+```{r, message=FALSE, warning=FALSE}
+# Boruta alg for RF variable selection 
+boruta <- Boruta(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1, doTrace = 2, maxRuns = 500)
+
+print(boruta$finalDecision)
+par(mar = c(8,5,2,2))
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+Boruta is a feature selection algorithm. Precisely, it works as a wrapper 
+algorithm around Random Forest. 
+
+```{r}
+## Random Forest - All variables 
+# Train 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Test
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+```
+
+TP + TN / TP + TN + FP + FN 
+Training acc: 85 + 279 / 85 + 279 + 0 + 2 = 0.994535519126 = 99.45%
+Testing acc: 26 + 130 / 26 + 130 + 0 + 2 = 0.987341772152 = 98.73%
+
+------------------
+Variables in order of importance with description. Importance is a measure of 
+by how much removing a variable decreases accuracy, and vice versa — by how much 
+including a variable increases accuracy.
+------------------
+
+
+```{r}
+# Random Forest w/o redundant sp variable
+presskicks1_train <- presskicks1_train[, -14]
+presskicks1_test <- presskicks1_test[, -14]
+
+# Train
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Test
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks1_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+```
+Training acc: 67 + 278 / 67 + 278 + 1 + 20 = 0.94262295082 = 94.26%
+Testing acc:8 + 129 / 8 + 129 + 1 + 20 = 0.867088607595 = 86.71% 
+
+
+```{r}
+# # Observations occurring at or under 180 seconds 
+presskicks3 <- timeout_occures[timeout_occures$game_seconds_remaining <= 180,]
+
+# Splitting data 
+sample_size = floor(0.7*nrow(presskicks3))
+picked = sample(seq_len(nrow(presskicks3)), size = sample_size)
+presskicks3_train <- presskicks3[picked,]
+presskicks3_test <- presskicks3[-picked,]
+
+# Convert categorical binary to numerical binary 
+presskicks3_train$field_goal_result <- ifelse(presskicks3_train$field_goal_result == "made",1,0)
+presskicks3_test$field_goal_result <- ifelse(presskicks3_test$field_goal_result == "made",1,0)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Boruta alg for RF variable selection - 180 seconds 
+boruta <- Boruta(as.factor(field_goal_result) ~ ., 
+                   data = presskicks3, doTrace = 2, maxRuns = 500)
+
+print(boruta$finalDecision)
+par(mar = c(8,5,2,2))
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+
+```{r}
+## Random Forest - All variables 
+# Train 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks3_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Test
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks3_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Random Forest w/o redundant sp variable
+presskicks3_train <- presskicks3_train[, -14]
+presskicks3_test <- presskicks3_test[, -14]
+
+# Train
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks3_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Test
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks3_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+```
+With cp 
+Training acc: 123 + 507 / 123 + 507 + 1 + 0 = 0.998415213946 = 99.84%
+Testing acc:52 + 218 / 52 + 218 + 1 + 0 = 0.9963099631 = 99.63%
+
+W/O cp 
+Training acc: 82 + 500 / 82 + 500 + 42 + 7 = 0.92234548336 = 92.23%
+Testing acc: 21 + 218 / 21 + 218 + 32 + 0 = 0.881918819188 = 88.19%
+
+```{r}
+# # Observations occurring at or under 300 seconds 
+presskicks5 <- timeout_occures[timeout_occures$game_seconds_remaining <= 300,]
+
+# Splitting data 
+sample_size = floor(0.7*nrow(presskicks5))
+picked = sample(seq_len(nrow(presskicks5)), size = sample_size)
+presskicks5_train <- presskicks5[picked,]
+presskicks5_test <- presskicks5[-picked,]
+
+# Convert categorical binary to numerical binary 
+presskicks5_train$field_goal_result <- ifelse(presskicks5_train$field_goal_result == "made",1,0)
+presskicks5_test$field_goal_result <- ifelse(presskicks5_test$field_goal_result == "made",1,0)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Boruta alg for RF variable selection - 300 seconds 
+boruta <- Boruta(as.factor(field_goal_result) ~ ., 
+                   data = presskicks5, doTrace = 2, maxRuns = 500)
+
+print(boruta$finalDecision)
+par(mar = c(8,5,2,2))
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+
+```{r}
+## Random Forest - All variables 
+# Train 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks5_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Test
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks5_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Random Forest w/o redundant sp variable
+presskicks5_train <- presskicks5_train[, -14]
+presskicks5_test <- presskicks5_test[, -14]
+
+# Train
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks5_train, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# Test
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = presskicks5_test, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+```
+With cp 
+Training acc: 142 + 614 / 142 + 614 + 2 + 0 = 0.997361477573 = 99.74%
+Testing acc: 64 + 262 / 64 + 262 + 0 + 0 = 1 = 100%  (not good)
+
+W/O cp 
+Training acc: 87 + 609 / 87 + 609 + 57 + 5 = 0.918205804749 = 91.82%
+Testing acc: 28 + 261 / 28 + 261 + 36 + 1 = 0.886503067485 = 88.65%
+
+```{r}
+## Variable Selection - Marissa 
+# Train 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ season_type +
+                                 posteam_type + game_seconds_remaining + drive +
+                                 kick_distance + timeout +
+                                 posteam_timeouts_remaining +
+                                 defteam_timeouts_remaining +
+                                 score_differential + opp_fg_prob + location +
+                                 result + roof+ surface + temp + wind +
+                                 kicker_player_id,
+                   data = presskicks1_train,
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import)
+vip(rforest_import)
+
+# Test 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ season_type +
+                                 posteam_type + game_seconds_remaining + drive +
+                                 kick_distance + timeout +
+                                 posteam_timeouts_remaining +
+                                 defteam_timeouts_remaining +
+                                 score_differential + opp_fg_prob + location +
+                                 result + roof+ surface + temp + wind +
+                                 kicker_player_id,
+                   data = presskicks1_test,
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import)
+vip(rforest_import)
+```
+Training acc: 22 + 268 / 22 + 268 + 65 + 11 = 0.792349726776 = 79.23%
+Testing acc: 0 + 126 / 0 + 126 + 28 + 4 = 0.79746835443 = 79.74% 
+
+```{r}
+# Variable Selection - Sophie 
+
+# Train 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ season_type +
+                                 posteam_type + game_seconds_remaining + drive +
+                                 kick_distance + timeout + home_team +
+                                 away_team + week + qtr + wp + def_wp +
+                                 kicker_player_name +
+                                 posteam_timeouts_remaining +
+                                 defteam_timeouts_remaining + timeout_team +
+                                 half_seconds_remaining +
+                                 score_differential + opp_fg_prob + location +
+                                 result + roof+ surface + temp + wind +
+                                 kicker_player_id,
+                   data = presskicks1_train,
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import)
+vip(rforest_import)
+
+# Test 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ season_type +
+                                 posteam_type + game_seconds_remaining + drive +
+                                 kick_distance + timeout + home_team +
+                                 away_team + week + qtr + wp + def_wp +
+                                 kicker_player_name +
+                                 posteam_timeouts_remaining +
+                                 defteam_timeouts_remaining + timeout_team +
+                                 half_seconds_remaining +
+                                 score_differential + opp_fg_prob + location +
+                                 result + roof+ surface + temp + wind +
+                                 kicker_player_id,
+                   data = presskicks1_test,
+                   ntree = 200, importance = TRUE)
+rforest_import
+plot(rforest_import)
+vip(rforest_import)
+``` 
+ 
+Training acc: 16 + 268 / 16 + 268 + 71 + 11 = 0.77595284153 = 77.59%
+Testing acc: 0 + 128 / 0 + 128 + 28 + 2 = 0.810126582278 = 81.01% 
