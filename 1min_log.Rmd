@@ -1,0 +1,70 @@
+---
+title: "Logistic Regression NFL"
+author: "Sophie Giacobbe"
+date: "4/5/2023"
+output: pdf_document
+---
+
+```{r}
+library(readr)
+library(dplyr)
+```
+
+```{r}
+kicks <- read_csv("NFLKicks2.csv")
+kicks <- kicks[kicks$field_goal_result != "blocked",]
+kicks <- kicks[kicks$game_seconds_remaining <= 60,]
+kicks <- kicks[-1]
+kicks[, c('home_team', 'away_team','quarter_seconds_remaining', 'half_seconds_remaining', 'play_type', 'field_goal_result', 'home_timeouts_remaining', 'away_timeouts_remaining', 'home_wp', 'away_wp', 'game_id', 'play_id', 'posteam_type', 'location', 'roof')] <- list(NULL)
+```
+
+```{r}
+kicks$temp[is.na(kicks$temp)] <- 65
+kicks$wind[is.na(kicks$wind)] <- 0
+```
+
+```{r}
+table(kicks$sp)
+```
+
+```{r}
+summary(glm(sp ~ timeout, data = kicks, family = binomial))
+#:(
+```
+
+```{r}
+summary(glm(sp ~ defteam_timeouts_remaining, data = kicks, family = binomial))
+#:(
+```
+
+```{r}
+#model of things that felt helpful to me
+summary(glm(sp ~ game_seconds_remaining + drive + defteam_timeouts_remaining + score_differential + no_score_prob + opp_fg_prob + wp, data = kicks, family = binomial))
+```
+
+```{r}
+summary(glm(sp ~ drive + no_score_prob + opp_fg_prob, data = kicks, family = binomial))
+```
+
+```{r}
+summary(glm(sp ~ posteam, data = kicks, family = binomial))
+# BUF
+```
+
+```{r}
+summary(glm(sp ~ game_seconds_remaining, data = kicks, family = binomial))
+```
+
+```{r}
+#i would not suggest running this but like...go crazy if you want
+#summary(glm(sp ~ ., data = kicks, family = binomial))
+```
+
+
+
+
+
+
+
+
+
