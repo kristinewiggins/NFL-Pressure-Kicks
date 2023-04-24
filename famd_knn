@@ -1,0 +1,193 @@
+---
+title: "NFL_Kicks - FAMD exploration and KNN models"
+author: "KWiggins"
+date: "4/5/2023"
+output: pdf_document
+---
+
+```{r}
+#libraries
+library(dplyr)
+library(tidyr)
+library(FactoMineR)
+library(factoextra)
+library(gridExtra)
+library(grid)
+library(broom)
+library(ISLR)
+library(parsnip)
+library(yardstick)
+library(discrim)
+library(kknn)
+library(class)
+```
+
+```{r}
+#load data
+NFLdata <- read.csv('NFLkicks.csv')
+```
+
+## Data Cleaning
+
+```{r}
+#Clean data, replace NAs with appropriate value
+df <- subset(NFLdata, select = -c(X, play_id, game_id, 
+                                  quarter_seconds_remaining, 
+                                  half_seconds_remaining, time, 
+                                  kicker_player_name, home_team, away_team, 
+                                  posteam, timeout_team, play_type))
+df <- df %>%
+  mutate_at('temp', ~replace_na(.,65)) %>%
+  mutate_at(c('wind','play_clock'), ~replace_na(.,0)) %>%
+  mutate_at('drive', ~replace_na(.,1)) %>%
+  mutate_at('roof', ~replace_na(.,'dome'))
+
+```
+
+```{r}
+#check for NAs
+as.data.frame(colSums(is.na(df)))
+```
+
+## FAMD Data Exploration
+
+```{r}
+res.famd <- FAMD(df, graph = FALSE)
+```
+
+```{r}
+print(res.famd)
+```
+
+```{r}
+#proportion of variances retained by the different dimensions (axes)
+eig.val <- get_eigenvalue(res.famd)
+head(eig.val)
+```
+
+```{r}
+#scree plot showing percentages of inertia explained by each FAMD dimensions
+fviz_screeplot(res.famd)
+```
+
+```{r}
+#list containing the coordinates, the cos2 and the contribution of all variables
+var <- get_famd_var(res.famd)
+var
+
+# Coordinates of variables
+head(var$coord)
+# Cos2: quality of representation on the factore map
+head(var$cos2)
+# Contributions to the  dimensions
+head(var$contrib)
+```
+
+```{r}
+#correlation between variables
+#and the principal dimensions
+#and the contribution of variables to the dimensions 1 and 2
+
+# Plot of variables
+fviz_famd_var(res.famd, repel = TRUE)
+# Contribution to the first dimension
+fviz_contrib(res.famd, "var", axes = 1)
+# Contribution to the second dimension
+fviz_contrib(res.famd, "var", axes = 2)
+
+#note: red dashed line is the expected average value if all variables contributed the same
+```
+
+```{r}
+#quantitative vars
+quanti.var <- get_famd_var(res.famd, "quanti.var")
+quanti.var 
+
+#plot showing the relationship between variables, 
+#the quality of the representation of variables, and 
+#the correlation between variables and the dimensions
+fviz_famd_var(res.famd, "quanti.var", repel = TRUE,
+              col.var = "black")
+
+#plot above but coloring the most contributing quantitative variables
+fviz_famd_var(res.famd, "quanti.var", col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE)
+
+#plot above but coloring by the variable's cos2 values to represent the quality of 
+#representation on the factor map.
+#If a variable is well represented by two dimensions, the sum of the cos2 is closed to one.
+fviz_famd_var(res.famd, "quanti.var", col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE)
+
+```
+
+## KNN
+
+```{r}
+df_knn <- df
+df_knn$field_goal_result[df_knn$field_goal_result=="blocked"] <- "missed"
+```
+
+```{r}
+#transform all character variables to numeric so they work with KNN
+df_knn$field_goal_result <- as.numeric(as.factor(df_knn$field_goal_result))
+df_knn$location <- as.numeric(as.factor(df_knn$location))
+df_knn$roof <- as.numeric(as.factor(df_knn$roof))
+df_knn$surface <- as.numeric(as.factor(df_knn$surface))
+df_knn$posteam_type <- as.numeric(as.factor(df_knn$posteam_type))
+
+df_knn <- select_if(df_knn, is.numeric)   
+```
+
+```{r}
+#split data into training and testing data (90/10)
+cutoff <- sample(1:nrow(df_knn), 0.9*nrow(df_knn))
+train <- df_knn[cutoff,]
+test <- df_knn[-cutoff,]
+
+#function to calculate accuracy
+accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100}
+```
+
+```{r}
+#knn
+target_cat <- train[,7]
+test_cat <- test[,7]
+
+knn13 <- knn(train, test, cl=target_cat,k=13)
+
+confusion13 <-  table(knn13, test_cat)
+confusion13
+
+accuracy(confusion13)
+
+#this model has 82.27468% accuracy
+```
+
+```{r}
+df_knn2 <- subset(df_knn, select = -c(week, sp, posteam_score_post,
+                                      defteam_score_post, wp, def_wp, home_wp,
+                                      away_wp, no_score_prob, opp_fg_prob, 
+                                      score_differential_post))
+head(df_knn2)
+
+cutoff <- sample(1:nrow(df_knn2), 0.9*nrow(df_knn2))
+train <- df_knn2[cutoff,]
+test <- df_knn2[-cutoff,]
+
+target_cat <- train[,5]
+test_cat <- test[,5]
+
+knn21 <- knn(train, test, cl=target_cat,k=21)
+
+confusion21 <-  table(knn21, test_cat)
+confusion21
+
+accuracy(confusion21)
+
+#this model has 83.17597% accuracy
+```
+
+
