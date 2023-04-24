@@ -8,6 +8,7 @@ output: pdf_document
 ```{r}
 library(readr)
 library(dplyr)
+library(ggplot2)
 ```
 
 ```{r}
@@ -24,48 +25,64 @@ kicks$wind[is.na(kicks$wind)] <- 0
 ```
 
 ```{r}
+set.seed(478)
+tsize <- nrow(kicks)*0.7
+sub <- sample(1:nrow(kicks), size = tsize)
+train <- kicks[sub,]
+test2 <- kicks[-sub,]
+test <- test2[-test2$sp]
+```
+
+```{r}
 table(kicks$sp)
 #83% made
 ```
 
 ```{r}
-summary(glm(sp ~ timeout, data = kicks, family = binomial))
+kicks_timeout <- glm(sp ~ timeout, data = train, family = binomial)
 #:(
+ggplot()+ 
+  geom_point(aes(predict(kicks_timeout, test), test2$sp))
 ```
 
 ```{r}
-summary(glm(sp ~ defteam_timeouts_remaining, data = kicks, family = binomial))
-#:)
+kicks_dtimeouts <- glm(sp ~ defteam_timeouts_remaining, data = train, family = binomial)
+#:( this model sucks
+ggplot()+
+  geom_point(aes(predict(kicks_dtimeouts, test), test2$sp))
 ```
 
 ```{r}
 #model of things that felt helpful to me
-summary(glm(sp ~ game_seconds_remaining + drive + defteam_timeouts_remaining + score_differential + no_score_prob + opp_fg_prob + wp, data = kicks, family = binomial))
+kicks_2 <- glm(sp ~ game_seconds_remaining + drive + defteam_timeouts_remaining + score_differential + no_score_prob + opp_fg_prob + wp, data = train, family = binomial)
+#predict(kicks_2, test)
+ggplot()+ 
+  geom_point(aes(predict(kicks_2, test), test2$sp))
 ```
 
 ```{r}
-summary(glm(sp ~ no_score_prob + opp_fg_prob, data = kicks, family = binomial))
+kicks_3 <- glm(sp ~ no_score_prob + opp_fg_prob, data = train, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_3, test), test2$sp))
 ```
 
 ```{r}
-summary(glm(sp ~ posteam, data = kicks, family = binomial))
-# BAL, BUF, NE
+kicks_pos <- glm(sp ~ posteam, data = train, family = binomial)
+# BAL, BUF, DET, JAX, LV, NE
+ggplot()+ 
+  geom_point(aes(predict(kicks_pos, test), test2$sp))
 ```
 
 ```{r}
-summary(glm(sp ~ game_seconds_remaining, data = kicks, family = binomial))
+kicks_secs <- glm(sp ~ game_seconds_remaining, data = train, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_secs, test), test2$sp))
 ```
 
 ```{r}
-#i would not suggest running this but like...go crazy if you want
-#summary(glm(sp ~ ., data = kicks, family = binomial))
+#sometimes this works and sometimes it doesnt. i cannot understand why. I am literally not changing anything I dont know why it freaks out. 
+#kicks_whole <- glm(sp ~ ., data = train, family = binomial)
+#ggplot()+
+  #geom_point(aes(predict(kicks_whole, test), test$sp))
 ```
-
-
-
-
-
-
-
-
 
