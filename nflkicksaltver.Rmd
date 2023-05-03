@@ -1,0 +1,949 @@
+---
+title: 'NFL Pressure Kicks and Their Correlates'
+author: 'Marissa Ellingson, Sophie Giacobbe, Jason Nero, and Kristine Wiggins'
+output: pdf_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# load necessary libraries
+library(nflfastR)
+library(tidyverse)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(vip)
+library(Boruta)
+library(lme4)
+library(GGally)
+library(knitr)
+library(FactoMineR)
+library(factoextra)
+library(gridExtra)
+library(grid)
+library(broom)
+library(ISLR)
+library(yardstick)
+library(discrim)
+library(kknn)
+library(class)
+```
+
+```{r}
+## code used to retrieve the dataset and create .csv
+#
+#pbp <- nflfastR::load_pbp(2000:2022)
+#pbp <- pbp[!is.na(pbp$play_type),]
+#fgto <- pbp[pbp$play_type == 'field_goal' | pbp$play_type == #'no_play',]
+## remove NAs and penalties
+#fgto <- fgto[!is.na(fgto$timeout),]
+#fgto <- fgto[fgto$penalty != 1,]
+## add timeouts to field goal rows
+#for (i in 1:nrow(fgto)){
+#  if (fgto$timeout[i]==1 & fgto$play_type[i] != 'field_goal'){
+#    if (fgto$play_type[i+1]=='field_goal' & #fgto$time[i]==fgto$time[i+1]){
+#      fgto$timeout[i+1] = 1
+#      fgto$timeout_team[i+1] = fgto$timeout_team[i]
+#    }
+#  }
+#}
+## keep only the field goal rows
+#fg <- fgto[fgto$play_type == 'field_goal',]
+#write.csv(fg, 'NFLfieldgoals.csv')
+```
+
+```{r}
+## select the useful columns to create final dataset .csv
+#fg <- read.csv('NFLfieldgoals.csv')
+#fg <- fg %>% select(play_id,game_id,home_team,away_team,
+#                season_type,week,posteam,posteam_type,
+#                quarter_seconds_remaining,
+#                half_seconds_remaining,
+#                game_seconds_remaining,drive,sp,qtr,
+#                time,play_type,field_goal_result,
+#                kick_distance,home_timeouts_remaining,
+#                away_timeouts_remaining,timeout,
+#                timeout_team,posteam_timeouts_remaining,
+#                defteam_timeouts_remaining,posteam_score,
+#                defteam_score,score_differential,
+#                posteam_score_post,defteam_score_post,
+#                score_differential_post,no_score_prob,
+#                opp_fg_prob,wp,def_wp,home_wp,away_wp,
+#                kicker_player_name,kicker_player_id,
+#                season,play_clock,location,
+#                result,roof,surface,temp,wind)
+#write.csv(fg, 'NFLkicks.csv')
+```
+
+
+### Data Read & Clean ###
+#########################
+
+```{r}
+# reading in data
+kicks <- read.csv('https://raw.githubusercontent.com/kristinewiggins/NFL-Pressure-Kicks/c01bd037915638fc425517a2a362aa9b745c903b/NFLkicks.csv')
+kicks <- kicks[kicks$field_goal_result != 'blocked',]
+kicks <- kicks %>% select(-X,-sp)
+
+# cleaning up N/As 
+kicks$temp[is.na(kicks$temp)] <- 65
+kicks$wind[is.na(kicks$wind)] <- 0
+kicks$drive[is.na(kicks$drive)] <- 1
+kicks$play_clock[is.na(kicks$play_clock)] <- 0
+kicks$roof[is.na(kicks$roof)] <- 'retractable'
+presskicks1 <- kicks[kicks$game_seconds_remaining <= 60,]
+presskicks3 <- kicks[kicks$game_seconds_remaining <= 180,]
+presskicks5 <- kicks[kicks$game_seconds_remaining <= 300,]
+```
+
+
+### Inital Exploration ###
+##########################
+
+## FAMD Exploration ##
+
+```{r}
+# selecting subset of variables and fitting FAMD model. 
+df <- subset(kicks, select = -c(play_id, game_id, 
+                                  quarter_seconds_remaining, 
+                                  half_seconds_remaining, time, 
+                                  kicker_player_name, home_team, away_team, 
+                                  posteam, timeout_team, play_type))
+res.famd <- FAMD(df, graph = FALSE)
+print(res.famd)
+
+# proportion of variances retained by the different dimensions (axes)
+eig.val <- get_eigenvalue(res.famd)
+head(eig.val)
+```
+
+```{r}
+# scree plot showing percentages of inertia explained by each FAMD dimensions
+fviz_screeplot(res.famd)
+```
+
+```{r}
+#list containing the coordinates, the cos2 and the contribution of all variables
+var <- get_famd_var(res.famd)
+var
+
+# coordinates of variables
+head(var$coord)
+
+# cos2: quality of representation on the factor map
+head(var$cos2)
+
+# contributions to the  dimensions
+head(var$contrib)
+```
+
+```{r}
+# correlation between variables and the principal dimensions
+fviz_famd_var(res.famd, repel = TRUE)
+
+# contribution to the first dimension w/ dootted red line showing expected average
+fviz_contrib(res.famd, "var", axes = 1)
+
+# contribution to the second dimension w/ dotted red line showing expected average 
+fviz_contrib(res.famd, "var", axes = 2)
+```
+
+```{r}
+# quantitative vars
+quanti.var <- get_famd_var(res.famd, "quanti.var")
+quanti.var 
+
+# plot showing the relationship between variables, the quality of the 
+# representation of variables, and the correlation between variables and the 
+# dimensions.
+fviz_famd_var(res.famd, "quanti.var", repel = TRUE,
+              col.var = "black")
+
+# plot above but coloring the most contributing quantitative variables.
+fviz_famd_var(res.famd, "quanti.var", col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE)
+
+# plot above but coloring by the variable's cos2 values to represent the quality 
+# of representation on the factor map. If a variable is well represented by 
+# two dimensions, the sum of the cos2 is closed to one.
+fviz_famd_var(res.famd, "quanti.var", col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE)
+```
+
+## K-nearest Neighbors ##
+
+```{r}
+# setup model and rename 'blocked' to 'missed'
+df_knn <- df
+df_knn$field_goal_result[df_knn$field_goal_result=="blocked"] <- "missed"
+```
+
+```{r}
+# transform all character variables to numeric 
+df_knn$field_goal_result <- as.numeric(as.factor(df_knn$field_goal_result))
+df_knn$location <- as.numeric(as.factor(df_knn$location))
+df_knn$roof <- as.numeric(as.factor(df_knn$roof))
+df_knn$surface <- as.numeric(as.factor(df_knn$surface))
+df_knn$posteam_type <- as.numeric(as.factor(df_knn$posteam_type))
+df_knn <- select_if(df_knn, is.numeric)   
+```
+
+```{r}
+# split data into training and testing data (90/10)
+cutoff <- sample(1:nrow(df_knn), 0.9*nrow(df_knn))
+train <- df_knn[cutoff,]
+test <- df_knn[-cutoff,]
+
+# function to calculate accuracy
+accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100}
+```
+
+```{r}
+# fitting and calculating KNN model accuracy 
+target_cat <- train[,7]
+test_cat <- test[,7]
+knn13 <- knn(train, test, cl=target_cat,k=13)
+confusion13 <-  table(knn13, test_cat)
+confusion13
+accuracy(confusion13)
+```
+
+```{r}
+# fitting and calculating KNN model accuracy
+df_knn2 <- subset(df_knn, select = -c(week, posteam_score_post,
+                                      defteam_score_post, wp, def_wp, home_wp,
+                                      away_wp, no_score_prob, opp_fg_prob, 
+                                      score_differential_post))
+head(df_knn2)
+cutoff <- sample(1:nrow(df_knn2), 0.9*nrow(df_knn2))
+train <- df_knn2[cutoff,]
+test <- df_knn2[-cutoff,]
+target_cat <- train[,5]
+test_cat <- test[,5]
+knn21 <- knn(train, test, cl=target_cat,k=21)
+confusion21 <-  table(knn21, test_cat)
+confusion21
+accuracy(confusion21)
+```
+
+
+### Data Seperation ###
+#######################
+ 
+```{r}
+set.seed(478)
+
+# divide one minute subset data into train and test datasets.   
+tsize <- nrow(presskicks1)*0.7
+sub <- sample(1:nrow(presskicks1), size = tsize)
+train1 <- presskicks1[sub,]
+test1_ <- presskicks1[-sub,]
+test1 <- test1_ %>% select(-field_goal_result)
+
+# divide twp minute subset data into train and test datasets.   
+tsize <- nrow(presskicks3)*0.7
+sub <- sample(1:nrow(presskicks3), size = tsize)
+train3 <- presskicks3[sub,]
+test3_ <- presskicks3[-sub,]
+test3 <- test3_ %>% select(-field_goal_result)
+
+# divide three minute subset data into train and test datasets.   
+tsize <- nrow(presskicks5)*0.7
+sub <- sample(1:nrow(presskicks5), size = tsize)
+train5 <- presskicks5[sub,]
+test5_ <- presskicks5[-sub,]
+test5 <- test5_ %>% select(-field_goal_result)
+```
+
+
+### 1 Minute Analysis By Model ### 
+##################################
+
+## Correlation Map ## 
+
+```{r, message=FALSE}
+# kick outcomes and correlation of continuous variables
+table(presskicks1$field_goal_result)
+
+# 78% made
+presskicks1 %>% select(week,game_seconds_remaining,drive,kick_distance,
+                       posteam_timeouts_remaining,defteam_timeouts_remaining,
+                       score_differential,no_score_prob,opp_fg_prob,wp,result,
+                       temp,wind) %>% ggpairs()
+```
+
+## Logistic Regression ## 
+
+```{r}
+# fitting model for exploring possible predictor variable subsets 
+kicks_timeout <- glm(as.factor(field_goal_result) ~ timeout, data = train1, 
+                     family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_timeout, test1), test1_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_dtimeouts <- glm(as.factor(field_goal_result) ~ defteam_timeouts_remaining, 
+                       data = train1, family = binomial)
+ggplot()+
+  geom_point(aes(predict(kicks_dtimeouts, test1), test1_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_2 <- glm(as.factor(field_goal_result) ~ game_seconds_remaining + drive + 
+                 defteam_timeouts_remaining + score_differential + no_score_prob 
+               + opp_fg_prob + wp, data = train1, family = binomial)
+#predict(kicks_2, test1)
+ggplot()+ 
+  geom_point(aes(predict(kicks_2, test1), test1_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_3 <- glm(as.factor(field_goal_result) ~ no_score_prob + opp_fg_prob, 
+               data = train1, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_3, test1), test1_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_pos <- glm(as.factor(field_goal_result) ~ posteam, data = train1, 
+                 family = binomial)
+# BAL, BUF, DET, JAX, LV, NE
+ggplot()+ 
+  geom_point(aes(predict(kicks_pos, test1), test1_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_secs <- glm(as.factor(field_goal_result) ~ game_seconds_remaining, 
+                  data = train1, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_secs, test1), test1_$field_goal_result))
+```
+
+## Mixed Effects Logistic Regression ##
+
+```{r, warning=FALSE}
+# fitting model to assess selection predictor variables for significant 
+model1 <- glmer(factor(field_goal_result) ~ (1|kicker_player_id) +
+                  game_seconds_remaining + kick_distance +
+                  defteam_timeouts_remaining +
+                  score_differential,
+                data = train1, family = binomial)
+pred <- predict(model1,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+Kick distance, defensive timeouts remaining, and score differential are significant.
+
+```{r, warning=FALSE}
+# fitting model to assess selection predictor variables for significant 
+model2 <- glmer(factor(field_goal_result) ~ (1|kicker_player_id) + season_type +
+                  posteam_type + game_seconds_remaining + drive +
+                  kick_distance + timeout + posteam_timeouts_remaining +
+                  defteam_timeouts_remaining + score_differential + opp_fg_prob +
+                  location + result + roof + surface +
+                  temp + wind,
+                data = train1, family = binomial)
+pred <- predict(model2,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+Kick distance is significant.
+
+```{r}
+# fitting model to assess significance of home field advantage variable.
+postypemod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+posteam_type,
+                 data = train1, family = binomial)
+pred <- predict(postypemod,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+No evidence for a home field advantage.
+
+```{r}
+# fitting model to assess significance of game seconds remaining variable.  
+gamesecsmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       game_seconds_remaining,
+                 data = train1, family = binomial)
+pred <- predict(gamesecsmod,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+summary(gamesecsmod)
+```
+
+```{r, warning=FALSE}
+# fitting model to assess significance of roof variable.  
+roofmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       roof,
+                 data = train1, family = binomial)
+pred <- predict(roofmod,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+```{r}
+# fitting model to assess significance of temperature variable 
+tempmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       temp,
+                 data = train1, family = binomial)
+pred <- predict(tempmod,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+```{r}
+# fitting model to assess significance of wind variable 
+windmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       wind,
+                 data = train1, family = binomial)
+pred <- predict(windmod,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+```{r, warning=FALSE}
+# fitting model to assess significance of kicker id number variable 
+kickmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                   kick_distance,
+                 data = train1, family = binomial)
+pred <- predict(kickmod,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+```{r, warning=FALSE}
+# fitting model to assess significance of all previous model variables
+model3 <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                  game_seconds_remaining + roof + temp + wind + kick_distance,
+                data = train1, family = binomial)
+pred <- predict(model3,test1,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<0] <- 'made'
+table(test1_$field_goal_result,pred)
+```
+
+## Random Forest ##
+
+```{r}
+# convert response variable to binary in train and test datasets. 
+train1$field_goal_result <- ifelse(train1$field_goal_result == "made",1,0)
+test1_$field_goal_result <- ifelse(test1_$field_goal_result == "made",1,0)
+
+# remove timeout_team. 
+train1 <- train1 %>% select(-timeout_team)
+test1_ <- test1_ %>% select(-timeout_team)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Boruta alg for RF variable selection 
+boruta <- Boruta(as.factor(field_goal_result) ~ .-timeout_team, 
+                   data = presskicks1, doTrace = 2, maxRuns = 500)
+print(boruta$finalDecision)
+par(mar = c(8,5,2,2))
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+Boruta is a feature selection algorithm. Precisely, it works as a wrapper 
+algorithm around Random Forest. 
+
+```{r}
+set.seed(478)
+
+# fitting model and extracting variable importance - all variables on train data 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = train1, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# fitting model and extracting variable importance - all variables on test data 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = test1_, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+```
+
+Training acc: 92 + 484 / 92 + 484 + 4 + 41 = 0.927536 = 92.75%
+Testing acc: 40 + 203 / 40 + 203 + 3 + 21 = 0.910112 = 91.01%
+
+
+### 3 Minute Analysis ###
+#########################
+
+## Correelation Map ## 
+```{r, message=FALSE}
+# kick outcomes and correlation of continuous variables
+table(presskicks3$field_goal_result)
+
+# 82% made
+presskicks3 %>% select(week,game_seconds_remaining,drive,kick_distance,
+                       posteam_timeouts_remaining,defteam_timeouts_remaining,
+                       score_differential,no_score_prob,opp_fg_prob,wp,result,
+                       temp,wind) %>% ggpairs()
+```
+
+## Logistic Regression ## 
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_timeout <- glm(as.factor(field_goal_result) ~ timeout, data = train3, 
+                     family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_timeout, test3), test3_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_dtimeouts <- glm(as.factor(field_goal_result) ~ defteam_timeouts_remaining, 
+                       data = train3, family = binomial)
+#:( this model sucks
+ggplot()+
+  geom_point(aes(predict(kicks_dtimeouts, test3), test3_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_2 <- glm(as.factor(field_goal_result) ~ game_seconds_remaining + drive + 
+                 defteam_timeouts_remaining + score_differential + 
+                 no_score_prob + opp_fg_prob + wp, data = train3, 
+               family = binomial)
+#predict(kicks_2, test)
+ggplot()+ 
+  geom_point(aes(predict(kicks_2, test3), test3_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_3 <- glm(as.factor(field_goal_result) ~ no_score_prob + opp_fg_prob, 
+               data = train3, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_3, test3), test3_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_pos <- glm(as.factor(field_goal_result) ~ posteam, data = train3, 
+                 family = binomial)
+# BAL, BUF, DET, JAX, LV, NE
+ggplot()+ 
+  geom_point(aes(predict(kicks_pos, test3), test3_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_secs <- glm(as.factor(field_goal_result) ~ game_seconds_remaining, 
+                  data = train3, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_secs, test3), test3_$field_goal_result))
+```
+
+## Mixed Effects Logistic Regression ##
+
+```{r, warning=FALSE}
+# fitting model to assess significance of various predictor variables
+model1 <- glmer(factor(field_goal_result) ~ (1|kicker_player_id) +
+                  game_seconds_remaining + kick_distance +
+                  defteam_timeouts_remaining +
+                  score_differential,
+                data = train3, family = binomial)
+pred <- predict(model1,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+Kick distance is significant.
+
+```{r, warning=FALSE}
+# fitting model to assess significance of various predictor variables.
+model2 <- glmer(factor(field_goal_result) ~ (1|kicker_player_id) + season_type +
+                  posteam_type + game_seconds_remaining + drive +
+                  kick_distance + timeout + posteam_timeouts_remaining +
+                  defteam_timeouts_remaining + score_differential + 
+                  opp_fg_prob + location + result + roof + surface +
+                  temp + wind,
+                data = train3, family = binomial)
+pred <- predict(model2,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+Kick distance, temp, and wind are significant.
+
+```{r}
+# fitting model to assess significance of home field advantage variable 
+postypemod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+posteam_type,
+                 data = train3, family = binomial)
+pred <- predict(postypemod,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+No evidence for a home field advantage.
+
+```{r, warning=FALSE}
+# fitting model to assess significance of game seconds remaining variable 
+gamesecsmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       game_seconds_remaining,
+                 data = train3, family = binomial)
+pred <- predict(gamesecsmod,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+Significant but still predicts all kicks made.
+
+```{r, warning=FALSE}
+# fitting model to assess significance of roof variable 
+roofmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       roof,
+                 data = train3, family = binomial)
+pred <- predict(roofmod,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+```{r, warning=FALSE}
+# fitting model to assess significance of temperature variable 
+tempmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       temp,
+                 data = train3, family = binomial)
+pred <- predict(tempmod,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+```{r}
+# fitting model to assess significance of wind variable 
+windmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       wind,
+                 data = train3, family = binomial)
+pred <- predict(windmod,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+Significant, predicts 1 kick missed.
+
+```{r}
+# fitting model for prediction variation between all kick types. 
+kickmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                   kick_distance,
+                 data = train3, family = binomial)
+pred <- predict(kickmod,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+Significant, prediction accuracy 81.8%, might at well have predicted all kicks made.
+
+```{r, warning=FALSE}
+# fitting model to assess significance of all previous variables 
+model3 <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                  game_seconds_remaining + roof + temp + wind + kick_distance,
+                data = train3, family = binomial)
+pred <- predict(model3,test3,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<0] <- 'made'
+table(test3_$field_goal_result,pred)
+```
+
+Wind and kick distance significant.
+
+## Random Forest ## 
+
+```{r}
+# convert response variable to binary in train and test datasets
+train3$field_goal_result <- ifelse(train3$field_goal_result == "made",1,0)
+test3_$field_goal_result <- ifelse(test3_$field_goal_result == "made",1,0)
+
+# remove timeout_team 
+train3 <- train3 %>% select(-timeout_team)
+test3_ <- test3_ %>% select(-timeout_team)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# boruta alg for RF variable selection 
+bor3 <- presskicks3 %>% select(-timeout_team)
+boruta <- Boruta(as.factor(field_goal_result) ~ ., 
+                   data = bor3, doTrace = 2, maxRuns = 300)
+print(boruta$finalDecision)
+par(mar = c(8,5,2,2))
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+
+```{r}
+set.seed(478)
+
+# fitting model and extracting variable importance - all variables on train data 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = train3, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# fitting model and extracting variable importance - all variables on test data 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = test3_, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+```
+
+Training acc: 122 + 1051 / 122 + 1051 + 6 + 104 = 0.914263 = 91.43%
+Testing acc: 58 + 438 / 58 + 438 + 5 + 49 = 0.901818 = 90.18%
+
+
+### 5 Minute Analysis ###
+#########################
+
+```{r, message=FALSE}
+# kick outcomes and correlation of continuous variables
+table(presskicks5$field_goal_result)
+
+# 83% made
+presskicks5 %>% select(week,game_seconds_remaining,drive,kick_distance,
+                       posteam_timeouts_remaining,defteam_timeouts_remaining,
+                       score_differential,no_score_prob,opp_fg_prob,wp,result,
+                       temp,wind) %>% ggpairs()
+```
+
+## Logistic Regression ##
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_timeout <- glm(as.factor(field_goal_result) ~ timeout, data = train5, 
+                     family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_timeout, test5), test5_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_dtimeouts <- glm(as.factor(field_goal_result) ~ defteam_timeouts_remaining, 
+                       data = train5, family = binomial)
+ggplot()+
+  geom_point(aes(predict(kicks_dtimeouts, test5), test5_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_2 <- glm(as.factor(field_goal_result) ~ game_seconds_remaining + drive + 
+                 defteam_timeouts_remaining + score_differential + 
+                 no_score_prob + opp_fg_prob + wp, data = train5, 
+               family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_2, test5), test5_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_3 <- glm(as.factor(field_goal_result) ~ no_score_prob + opp_fg_prob, 
+               data = train5, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_3, test5), test5_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_pos <- glm(as.factor(field_goal_result) ~ posteam, data = train5, 
+                 family = binomial)
+# BAL, BUF, DET, JAX, LV, NE
+ggplot()+ 
+  geom_point(aes(predict(kicks_pos, test5), test5_$field_goal_result))
+```
+
+```{r}
+# fitting model for exploring possibly useful predictor variable subsets 
+kicks_secs <- glm(as.factor(field_goal_result) ~ game_seconds_remaining, 
+                  data = train5, family = binomial)
+ggplot()+ 
+  geom_point(aes(predict(kicks_secs, test5), test5_$field_goal_result))
+```
+
+## Mixed Effects Logistic Regression ##
+
+```{r, warning=FALSE}
+# fitting model to assess significance of kick distance variable 
+model1 <- glmer(factor(field_goal_result) ~ (1|kicker_player_id) +
+                  game_seconds_remaining + kick_distance +
+                  defteam_timeouts_remaining +
+                  score_differential,
+                data = train5, family = binomial)
+pred <- predict(model1,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+Kick distance is significant.
+
+```{r, warning=FALSE}
+# fitting model to assess significance of select predictor variables 
+model2 <- glmer(factor(field_goal_result) ~ (1|kicker_player_id) + season_type +
+                  posteam_type + game_seconds_remaining + drive +
+                  kick_distance + timeout + posteam_timeouts_remaining +
+                  defteam_timeouts_remaining + score_differential + opp_fg_prob +
+                  location + result + roof + surface +
+                  temp + wind,
+                data = train5, family = binomial)
+pred <- predict(model2,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+Kick distance is significant.
+
+```{r}
+# fitting model to assess significance of home field advantage variable 
+postypemod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+posteam_type,
+                 data = train5, family = binomial)
+pred <- predict(postypemod,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+No evidence for a home field advantage.
+
+```{r, warning=FALSE}
+# fitting model to assess significance of kick results 
+gamesecsmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       game_seconds_remaining,
+                 data = train5, family = binomial)
+pred <- predict(gamesecsmod,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+Significant but still predicts all kicks made.
+
+```{r, warning=FALSE}
+roofmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       roof,
+                 data = train5, family = binomial)
+pred <- predict(roofmod,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+```{r, warning=FALSE}
+# fitting model to assess significance of temperature variable 
+tempmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       temp,
+                 data = train5, family = binomial)
+pred <- predict(tempmod,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+```{r}
+# fitting model to assess significance of wind variable 
+windmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                       wind,
+                 data = train5, family = binomial)
+pred <- predict(windmod,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+```{r}
+# fitting model to assess significance of kick distance prediction 
+kickmod <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                   kick_distance,
+                 data = train5, family = binomial)
+pred <- predict(kickmod,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<=0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+Significant, prediction accuracy 84%, might at well have predicted all kicks made.
+
+```{r, warning=FALSE}
+# fitting model to assess significance of game seconds remaining variable 
+model3 <- glmer(factor(field_goal_result)~(1|kicker_player_id)+
+                  game_seconds_remaining + roof + temp + wind + kick_distance,
+                data = train5, family = binomial)
+pred <- predict(model3,test5,allow.new.levels=T)
+pred[pred>0] <- 'missed'
+pred[pred<0] <- 'made'
+table(test5_$field_goal_result,pred)
+```
+
+Game seconds remaining and kick distance significant.
+
+## Random Forest ## 
+
+```{r}
+# convert response variable to binary in train and test datasets
+train5$field_goal_result <- ifelse(train5$field_goal_result == "made",1,0)
+test5_$field_goal_result <- ifelse(test5_$field_goal_result == "made",1,0)
+
+# remove timeout_team
+train5 <- train5 %>% select(-timeout_team)
+test5_ <- test5_ %>% select(-timeout_team)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# boruta alg for RF variable selection 
+bor5 <- presskicks5 %>% select(-timeout_team)
+boruta <- Boruta(as.factor(field_goal_result) ~ ., 
+                   data = bor5, doTrace = 2, maxRuns = 300)
+print(boruta$finalDecision)
+par(mar = c(8,5,2,2))
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+```{r}
+set.seed(478)
+
+# fitting model and extracting variable importance - all variables on train data 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = train5, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+
+# fitting model and extracting variable importance - all variables on test data 
+rforest_import <- randomForest(as.factor(field_goal_result) ~ ., 
+                   data = test5_, 
+                   ntree = 200, importance = TRUE)
+rforest_import
+vip(rforest_import)
+```
+
+Training acc: 150 + 1527 / 150 + 1527 + 7 + 147 = 0.915893 = 91.59%
+Testing acc: 59 + 645 / 59 + 645 + 6 + 76 = 0.89567 = 89.57%
+
